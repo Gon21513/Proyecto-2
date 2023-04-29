@@ -41,20 +41,27 @@ unsigned int CCPRA = 0; //variable para el ccpr1
 unsigned int CCPRB = 0; //variable para el ccpr2
 
 
-
-uint8_t cont_led;
-int pwm_led;
-
-/////////////////////setup
+//-----------------prototipos-----------------
 void setup(void); //prototipo de setuo
 void setupADC(void); //prototipo ADC
 void setupPWM(void); //prototipo del PWM
 void tmr0_setup(void);
+void delay(unsigned int micro); //función para obtener delay variable
+void manualPWM_ISR(void);
 
 
-//------------mapeo de los valores -----------------
+
+unsigned int pot3; //valor para tiempo en alto de PWM para intensidad del led
+unsigned int pot4; //valor para tiempo en alto de PWM para intensidad del led
+
+
+//------------mapeo de los valores potenciometro 1 y 2 -----------------
 unsigned short cambiopwm(uint8_t valor, uint8_t POTMIN, uint8_t POTMAX,
         unsigned short PWMMIN, unsigned short PWMMAX);
+
+//-----------------mapeo de valores potenciometro 3 y 4--------
+unsigned int map(uint8_t value, int inputmin, int inputmax, int outmin, int outmax){ //función para mapear valores
+    return ((value - inputmin)*(outmax-outmin)) / (inputmax-inputmin)+outmin;} 
 
 
 ////Rutina de interrupciones
@@ -75,25 +82,19 @@ void __interrupt() isr(void){
         }
         
         else if (ADCON0bits.CHS == 0b0011){
-            pwm_led = ADRESH;
+            pot3 = map(ADRESH, 0, 255, 1, 10); //mapear valores para servomotor 3
+        }
+        
+        else if (ADCON0bits.CHS == 0b0100){//an4
+            pot4 = map(ADRESH, 0, 255, 1, 10); //mapear valores para servomotor 3
         }
         PIR1bits.ADIF = 0; //limpia la bandera del adc
     }
-    if (INTCONbits.T0IF){
-        cont_led++;
-        
-        if (cont_led <= pwm_led){
-            PORTCbits.RC3 = 1;
-        }
-        
-        else {
-            PORTCbits.RC3 = 0;
-
-        }
-        INTCONbits.T0IF = 0;
-        TMR0 = tmr0_val;
+    if (INTCONbits.T0IF == 1){
+        manualPWM_ISR();
     }
-}
+    }
+
 
 //////////main
 void main(void){
@@ -113,9 +114,14 @@ void main(void){
             }
             
             else if (ADCON0bits.CHS == 0b0011) { // Chequea el canal 1
-                ADCON0bits.CHS = 0b0000; // Cambia a canal analógico 0
+                ADCON0bits.CHS = 0b0100; // Cambia a canal analógico 0
                 __delay_us(40);
 
+            }
+            
+            else if (ADCON0bits.CHS == 0b0100){
+                ADCON0bits.CHS = 0b0000; // Cambia a canal analógico 0
+                __delay_us(40);
             }
             
             __delay_us(20); // Delay después de iniciar la conversión
@@ -135,14 +141,18 @@ void setup(void){
     ANSELbits.ANS0 = 1; // ra0 como analogico
     ANSELbits.ANS2 = 1; //ra1 como analogico (era este)
     ANSELbits.ANS3 = 1; //ra1 como analogico (era este)
+    ANSELbits.ANS4 = 1; //ra1 como analogico (era este)
 
     
     // --------------- Configura puertos --------------- 
     TRISAbits.TRISA0 = 1; //puerto A0 como entrada
     TRISAbits.TRISA2 = 1; //puerto A1 como entrada (era este)
     TRISAbits.TRISA3 = 1; //puerto A1 como entrada (era este)
+    TRISAbits.TRISA4 = 1; //puerto A1 como entrada (era este)
 
+    
     TRISCbits.TRISC3 = 0; //puerto C3 como salida (era este)
+    TRISCbits.TRISC4 = 0; //puerto C3 como salida (era este)
 
     
     // --------------- limpiar puertos --------------- 
@@ -240,9 +250,35 @@ void tmr0_setup(void){
     
 }
 
+/////////////////////////////////////////////
+///////////////potenciometros, pwm y manual
+////////////////////////////////////////////////////
+
 ////funcion de mapeo e valores
 unsigned short cambiopwm(uint8_t valor, uint8_t POTMIN, uint8_t POTMAX,
         unsigned short PWMMIN, unsigned short PWMMAX){
     return (unsigned short)(PWMMIN+((float)(PWMMAX-PWMMIN)/(POTMAX-POTMIN))
             *(valor-POTMIN));
+}
+
+
+void manualPWM_ISR(void) {
+        PORTCbits.RC3 = 1; //encender led
+        delay(pot3); // delay (tiempo en alto del pulso)
+        PORTCbits.RC3 = 0; //apagar
+        
+        PORTCbits.RC4 = 1; //encender puerto
+        delay(pot4); // delay (tiempo en alto del pulso)
+        PORTCbits.RC4 = 0; //apagar  
+        
+        INTCONbits.T0IF = 0; //limpia bandera del tmr0
+        TMR0 = tmr0_val;
+}
+
+//FUNCION DE DELAY VARIABLES
+void delay(unsigned int micro){
+    while (micro > 0){
+        __delay_us(250); //delay de 0.25ms
+        micro--; //decrementar variable
+    }
 }
