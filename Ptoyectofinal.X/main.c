@@ -4,8 +4,6 @@
  *
  * Created on 26 de abril de 2023, 21:16 PM
  */
-
-
 // CONFIG1
 #pragma config FOSC = INTRC_NOCLKOUT// Oscillator Selection bits (INTOSCIO oscillator: I/O function on RA6/OSC2/CLKOUT pin, I/O function on RA7/OSC1/CLKIN)
 #pragma config WDTE = OFF       // Watchdog Timer Enable bit (WDT disabled and can be enabled by SWDTEN bit of the WDTCON register)
@@ -27,19 +25,12 @@
 #include <pic16f887.h>
 
 
-#define _XTAL_FREQ 4000000  //frecuencia de 4MHZ
+#define _XTAL_FREQ 500000 //frecuencia de 500 kHZ
+#define tmr0_val 246 //valor del timer0 para un período de 20ms
 
-//////--------valores del potenciometro--------------
-#define potmin 0//valor minimo del potenciometro 
-#define potmax 255//valor maxiomo del potenciometro
-#define pwmmin 100//valor minimo el pwm 0.4 ms para
-//#define pwmmax 650//valor maximo para pwm 2.4 ms
-#define pwmmax 600
-//variables para controlar el ancho de pulso
-#define tmr0_val 249
-unsigned int CCPRA = 0; //variable para el ccpr1
-unsigned int CCPRB = 0; //variable para el ccpr2
-uint8_t bandera; //bandera para elegir los modos
+
+
+
 
 //-----------------prototipos-----------------
 void setup(void); //prototipo de setuo
@@ -48,77 +39,74 @@ void setupPWM(void); //prototipo del PWM
 void tmr0_setup(void);
 void delay(unsigned int micro); //función para obtener delay variable
 void manualPWM_ISR(void);
+void EEPROMWRITE(uint8_t address, uint8_t data); //lectura de eeprom
+uint8_t EEPROMREAD(uint8_t address); //lectura del eeprom
+void contmodo(void);
 
-
+int modo; //elegige el modo 
+unsigned int SERVO1;
+unsigned int SERVO2;
+unsigned int SERVO3;
+unsigned int SERVO4;
 
 unsigned int pot3; //valor para tiempo en alto de PWM para intensidad del led
 unsigned int pot4; //valor para tiempo en alto de PWM para intensidad del led
-
-
-//------------mapeo de los valores potenciometro 1 y 2 -----------------
-unsigned short cambiopwm(uint8_t valor, uint8_t POTMIN, uint8_t POTMAX,
-        unsigned short PWMMIN, unsigned short PWMMAX);
+unsigned int address;
 
 //-----------------mapeo de valores potenciometro 3 y 4--------
-unsigned int map(uint8_t value, int inputmin, int inputmax, int outmin, int outmax){ //función para mapear valores
-    return ((value - inputmin)*(outmax-outmin)) / (inputmax-inputmin)+outmin;} 
+unsigned int map(uint8_t value, int inputmin, int inputmax, int outmin, int outmax);
+//prototipos 
 
 
 ////Rutina de interrupciones
 void __interrupt() isr(void){
+    
  ////interrupcion para primer potecniometro
     if (PIR1bits.ADIF){ //chequea interrupcion de adc
-        if (ADCON0bits.CHS == 0b0000){ //revisa el canal 1 an0
-            CCPRA = cambiopwm(ADRESH, potmin, potmax, pwmmin, pwmmax);//se mapean los valores 
-            CCPR1L = (uint8_t)(CCPRA>>2);//asigna los 8 bits mas significativos a cpr1l
-            CCP1CONbits.DC1B = CCPRA & 0b11; //asigna a dc1b los 2 bits menos significaticos
-        }
-        
-        else if (ADCON0bits.CHS ==  0b0010){//chequea la interrupcion del adc
-            CCPRB = cambiopwm(ADRESH, potmin, potmax, pwmmin, pwmmax);//se mapean los valores 
-            CCPR2L = (uint8_t)(CCPRB>>2);//asigna los 8 bits mas significativos a cpr2l
-            CCP2CONbits.DC2B0 = CCPRB & 0b01; //se le asigna el primer bit menos significativo
-            CCP2CONbits.DC2B1 = CCPRB & 0b10; //se le asigna el segundo bit menos significativo
-        }
-        
-        else if (ADCON0bits.CHS == 0b0011){
-            pot3 = map(ADRESH, 0, 255, 1, 10); //mapear valores para servomotor 3
-        }
-        
-        else if (ADCON0bits.CHS == 0b0100){//an4
-            pot4 = map(ADRESH, 0, 255, 1, 10); //mapear valores para servomotor 3
-        }
         PIR1bits.ADIF = 0; //limpia la bandera del adc
     }
     
     //interrupcion del tmr0
-    if (INTCONbits.T0IF == 1){
+    if (INTCONbits.T0IF){
         manualPWM_ISR();
     }
     
+
+
     //interrupcion del portb
     if (INTCONbits.RBIF){//revisar las interrupciones del portb
-        if (PORTBbits.RB0 == 0){//enceder
-            PORTDbits.RD2 = 1; //limpia el bits que inica el sleeps
-            PORTDbits.RD3 = 1; //limpia el bits que inica el sleeps
+
+        
+        if (PORTBbits.RB1 == 0){//modo manual
+            
+            PORTDbits.RD4 = 1;// se enciende led para inicar que se guado
+            EEPROMWRITE(0x10, SERVO1);
+            EEPROMWRITE(0x11, SERVO2);
+            EEPROMWRITE(0x12, pot3);
+            EEPROMWRITE(0x13, pot4);
+
 
         }
         
-        else if (PORTBbits.RB1 == 0){
-            PORTDbits.RD2 = 0 ; //encender un led para indicarme que sleep esta encdedio
-            PORTDbits.RD3 = 1; //limpia el bits que inica el sleeps
 
-        }
+        else if (PORTBbits.RB2 == 0){//boton para guradar valores en eeprom
+            if (modo == 2){//si estamos en el modo 2 
+             PORTDbits.RD1 = 1; //indica que los valores se guardaron 
+             SERVO1 = EEPROMREAD(0x10); //guadar en memoria eepron el valor del prmer pot
+             SERVO2 = EEPROMREAD(0x11); //guardar el valor del 2 pot
+             pot3 = EEPROMREAD(0x12);//guardar el tercer pot
+             pot4 = EEPROMREAD(0x13);//guadar el pot4
+                }
+            
         
-        else if (PORTBbits.RB2 == 0){
-            PORTDbits.RD2 = 1; //apagar led que indica si esta dormido 
-            PORTDbits.RD3 = 0; //limpia el bits que inica el sleeps
-
+            else {
+                ;
+            }
+        
         }
         INTCONbits.RBIF = 0; 
 
     }
-    return;
 
 }
 
@@ -129,36 +117,105 @@ void main(void){
     setupADC();//LLamar a la configuracion del adc
     setupPWM();
     tmr0_setup();
+    modo = 1; //modo inical es 1
+    address = 0;
+    
+    //loop principal
         while (1){
-        if (ADCON0bits.GO == 0) { // Chequea si el ADC está encendido
-            if (ADCON0bits.CHS == 0b0000) { // Chequea el canal 0
-                ADCON0bits.CHS = 0b0010; // Cambia a canal 1// 0b0010
-                 __delay_us(40);
+            
+            //------------------Escoger modo--------------
+            if (PORTBbits.RB0 == 0){
+                __delay_ms(20);
+                while(PORTBbits.RB0 == 0){//antirrebote
+                    ;
+                }
+                contmodo();//contador para elegir el modo
+            }
+            
+            
+            //modo 1 ----------------modo ual if (PORTBbits.RB0 == 0){//modo manual
+            switch(modo){
+                case(1):
+                
+                    PORTDbits.RD4 = 0;//limpia led de leer eeprom
+                    PORTDbits.RD1 = 0;//limpia led de guardado
+                    PORTDbits.RD2 = 1; //enciende led 
+                    PORTDbits.RD3 = 1; //enciende led 
+            
+                
+                //-----------------canal---------------------
+                    ADCON0bits.CHS = 0b0000;  // Chequea el canal 0
+                    __delay_us(100);
+                    ADCON0bits.GO = 1; //se inicia la conversion 
+                    while (ADCON0bits.GO == 1){//espera a que se termine la conversion
+                        ;
+                    }
+                
+                    SERVO1 = map(ADRESH, 0, 255,3, 20); // mapaeo del potenciometro 1
+                    CCPR1L = SERVO1; //pasar el valor del CPR1L al servo 1
+                    __delay_us(100);
+                
+                 //---------------cana2---------------------------
+                    ADCON0bits.CHS = 0b0010;  // Chequea el canal 1
+                    __delay_us(100);
+                    ADCON0bits.GO = 1; //se inicia la conversion 
+                    while (ADCON0bits.GO == 1){//espera a que se termine la conversion
+                        ;
+                    }
+                
+                    SERVO2 = map(ADRESH, 0, 255, 3, 20); // mapaeo del potenciometro 1
+                    CCPR2L = SERVO2; //pasar el valor del CPR1L al servo 1
+                    __delay_us(100);
+                
 
-            } else if (ADCON0bits.CHS == 0b0010) { // Chequea el canal 1
-                ADCON0bits.CHS = 0b0011; // Cambia a canal analógico 0
-                __delay_us(40);
-            }
-            
-            else if (ADCON0bits.CHS == 0b0011) { // Chequea el canal 1
-                ADCON0bits.CHS = 0b0100; // Cambia a canal analógico 0
-                __delay_us(40);
+                //-------------canal 3-------------------
+                    ADCON0bits.CHS = 0b0011; // Chequea el canal 1
+                    __delay_us(100);
+                    ADCON0bits.GO = 1; //se inicia la conversion 
+                    while (ADCON0bits.GO == 1){//espera a que se termine la conversion
+                        ;
+                    }
+                    pot3 = map(ADRESH, 0, 255, 2, 10); // mapaeo del potenciometro 3
+                    __delay_us(100);
 
-            }
+                
+            //-------------------canal4----------
+                    ADCON0bits.CHS = 0b0100;
+                    __delay_us(100);
+                    ADCON0bits.GO = 1; //se inicia la conversion 
+                    while (ADCON0bits.GO == 1){//espera a que se termine la conversion
+                        ;
+                    }
+                    pot4 = map(ADRESH, 0, 255, 2, 10); // mapaeo del potenciometro 4
+                    __delay_us(100);
+                
+                    break;
+                
+                case(2): //modo eeprom
+                    PORTDbits.RD4 = 0; //limpia led de leer eeprom
+                    PORTDbits.RD1 = 0; //limpia el bits de guardado
+                    PORTDbits.RD2 = 0 ; //apaga led
+                    PORTDbits.RD3 = 1; //enciende led 
+                    
+                    //actualizar los valores de los pwm de los dos pot
+                    CCPR1L = SERVO1;
+                    CCPR2L = SERVO2;
+                    //el valor de los otros dos siempre se esta reescriuendo 
+                    
+                    break;
+                    
+                case(3): //modo uart
+                    PORTDbits.RD4 = 0; //limpia led de guadar eeprom
+                    PORTDbits.RD1 = 0; //limpia led de leer eeprom
+                    PORTDbits.RD2 = 1; //encinde led 
+                    PORTDbits.RD3 = 0; //apaga led       
             
-            else if (ADCON0bits.CHS == 0b0100){
-                ADCON0bits.CHS = 0b0000; // Cambia a canal analógico 0
-                __delay_us(40);
-            }
-            
-            __delay_us(20); // Delay después de iniciar la conversión
-            ADCON0bits.GO = 1; // Inicio de conversión
+                    break;
                 
             }
         }
-    return;
-}
 
+}
 
 //////////////setup general
 
@@ -180,11 +237,17 @@ void setup(void){
     //botones
     TRISBbits.TRISB0 = 1; //rb0 como entrada
     TRISBbits.TRISB1 = 1; //rb1 como entrada 
-    TRISBbits.TRISB2 = 1; //rb1 como entrada 
+    TRISBbits.TRISB2 = 1; //rb2 como entrada 
+    TRISBbits.TRISB3 = 1; //rb3 como entrada 
+    TRISBbits.TRISB4 = 1; //rb3 como entrada 
+
     
     TRISCbits.TRISC3 = 0; //puerto C3 como salida (era este)
     TRISCbits.TRISC4 = 0; //puerto C4 como salida (era este)
-    TRISE = 0x00; 
+    TRISEbits.TRISE2 = 1; //puerto C4 como salida (era este)
+
+    
+    //TRISE = 0x00; 
     TRISD = 0x00; 
 
     
@@ -201,10 +264,12 @@ void setup(void){
     WPUBbits.WPUB0 = 1;
     WPUBbits.WPUB1 = 1; 
     WPUBbits.WPUB2 = 1; 
- 
+    WPUBbits.WPUB3 = 1; 
+    WPUBbits.WPUB4 = 1; 
+
     
     // --------------- Oscilador --------------- 
-    OSCCONbits.IRCF = 0b0110 ; // establecerlo en 4 MHz
+    OSCCONbits.IRCF = 0b011 ; // establecerlo en 500kHz
     OSCCONbits.SCS = 1; // utilizar oscilador intern
     
 
@@ -212,13 +277,18 @@ void setup(void){
     // --------------- INTERRUPCIONES --------------- 
 
     INTCONbits.GIE = 1; // habilitar interrupciones globales
-    INTCONbits.PEIE = 1; // habilitar interrupciones perifericas
+    //INTCONbits.PEIE = 1; // habilitar interrupciones perifericas
     INTCONbits.RBIE = 1; //habilitar interrupciones en portb
     
     IOCBbits.IOCB0 = 1; //habilitar interrupciones en rb0
     IOCBbits.IOCB1 = 1; // habilitar interrupciones en rb1
     IOCBbits.IOCB2 = 1; // habilitar interrupcion en el rb2
+    IOCBbits.IOCB3 = 1; // habilitar interrupcion en el rb3
+    IOCBbits.IOCB4 = 1; // habilitar interrupcion en el rb3
 
+    INTCONbits.TMR0IE = 1;// activar interrupcion del tmr0
+    //INTCONbits.T0IF = 0;
+    //INTCONbits.T0IE;
     
     INTCONbits.RBIF = 0; //limpirar bander de interrupcion de portb
     PIE1bits.ADIE = 1; // habilitar interrupciones de ADC
@@ -245,7 +315,8 @@ void setupADC(void){
             
     //--------------- Iniciar el ADC ---------------
     ADCON0bits.ADON = 1;  //INICIA EL ADC
-    __delay_ms(1);
+    PIR1bits.ADIF = 0;
+    __delay_ms(100);
 }
 
 //pr2,bits prescale y oscilador afectan al servo
@@ -256,35 +327,32 @@ void setupPWM(void){
     TRISCbits.TRISC1 = 1; //CCP1 como entrada
     TRISCbits.TRISC2 = 1; //CCP2 como entrada
     
-    PR2 = 249 ;   //periodo de 4ms en el tmr2
+    PR2 = 155 ;   //periodo de 4ms en el tmr2
     
-    ////------------configuracion e ccp1------------------
-    CCP1CON = 0; //APAGA CCP1 INICIALMENTE
-    CCP2CON = 0; //APAGA CCP2 INICIALMENTE
-    
-    CCP1CONbits.P1M = 0; //modo de single output
-    CCP1CONbits.CCP1M = 0b1100; //modo pwm para ccp1
-    CCP2CONbits.CCP2M = 0b1100; //modo pwm para ccp2
 
+    CCP1CONbits.P1M = 0b00; //modo de single output
+    CCP1CONbits.CCP1M = 0b1100; //modo pwm para ccp1
+    CCP2CONbits.CCP2M = 0b1111; //modo pwm para ccp2
+
+    CCP1CONbits.DC1B = 0b11; //bis menos significativos para el tiempo en alto
+    CCPR1L = 11;
     
-    CCPR1L = 250>>2; //asiga 2 bits de 250 a ccpr1l
-    CCP1CONbits.DC1B = 250 & 0b11;//asigna los bits menos sigificaticos del and a dc1b 
-    CCPR2L = 250>>2;//los 2 bits desplazados se asignan a ccpr2l
-    CCP2CONbits.DC2B0 = 250 & 0b01;//asigna el valor del and a dc2b0 
-    CCP2CONbits.DC2B1 = 250 & 0b10; //asigna los bits a dc2b1
-    //CCPR1L = 3; //valor inicla para que el servo inicie en 90 
-    //CCP1CONbits.DC1B = 0b11; ///BITS menos significativos
+    CCP2CONbits.DC2B0 = 0b1; //bis menos significativos para el tiempo en alto
+    CCP2CONbits.DC2B1 = 0b1; 
+    CCPR2L = 11; //valor asignado para oscilar para empezar en 0
+
     
     PIR1bits.TMR2IF = 0; //limpiar bandera del tmr2
     T2CONbits.T2CKPS = 0b11; //prescalr 16
     T2CONbits.TMR2ON = 1; //encender el tmr2
     
-    while (!PIR1bits.TMR2IF);//ciclo de espera
-    PIR1bits.TMR2IF = 0; //limpoar la bandera del tmr2
+    while (!PIR1bits.TMR2IF){//ciclo de espera{
+        ;
+    }
+    //PIR1bits.TMR2IF = 0; //limpoar la bandera del tmr2
     
     TRISCbits.TRISC2 = 0; //habilitar salida en rc2
     TRISCbits.TRISC1 = 0; //habilitar salida en rc1
-    return;
 
 }
 
@@ -292,12 +360,10 @@ void tmr0_setup(void){
     OPTION_REGbits.T0CS = 0;
     OPTION_REGbits.PSA = 0;
     OPTION_REGbits.PS2 = 0;
-    OPTION_REGbits.PS1 = 0;
-    OPTION_REGbits.PS0 = 0;
-    
+    OPTION_REGbits.PS1 = 1;
+    OPTION_REGbits.PS0 = 1;//precaler 16
     INTCONbits.T0IF = 0; //limpiar bandera de interrupcion 
     TMR0 = tmr0_val;
-    return;
     
 }
 
@@ -305,16 +371,15 @@ void tmr0_setup(void){
 ///////////////potenciometros, pwm y manual
 ////////////////////////////////////////////////////
 
-////funcion de mapeo e valores
-unsigned short cambiopwm(uint8_t valor, uint8_t POTMIN, uint8_t POTMAX,
-        unsigned short PWMMIN, unsigned short PWMMAX){
-    return (unsigned short)(PWMMIN+((float)(PWMMAX-PWMMIN)/(POTMAX-POTMIN))
-            *(valor-POTMIN));
-}
+
+//mapeo de los pwm manuales
+unsigned int map(uint8_t value, int inputmin, int inputmax, int outmin, int outmax){ //función para mapear valores
+    return ((value - inputmin)*(outmax-outmin)) / (inputmax-inputmin)+outmin;} 
 
 
 //multiplexado para controlar los dos servos adicionales 
 void manualPWM_ISR(void) {
+        TMR0 = tmr0_val;
         PORTCbits.RC3 = 1; //encender led
         delay(pot3); // delay (tiempo en alto del pulso)
         PORTCbits.RC3 = 0; //apagar
@@ -324,7 +389,7 @@ void manualPWM_ISR(void) {
         PORTCbits.RC4 = 0; //apagar  
         
         INTCONbits.T0IF = 0; //limpia bandera del tmr0
-        TMR0 = tmr0_val;
+        
 }
 
 //FUNCION DE DELAY VARIABLES
@@ -337,40 +402,56 @@ void delay(unsigned int micro){
 
 //----------funciones para eeprom-----------------------
 
+////----------funciones--------------
 void EEPROMWRITE(uint8_t address, uint8_t data){
+    while(WR);
     EEADR = address;//asignar direccin de datos 
     EEDAT = data;//datos 
-    
+   
     EECON1bits.EEPGD = 0; //escribe en la memoria de datos
     EECON1bits.WREN = 1; // habilita escritura en eeprom 
     
     INTCONbits.GIE = 0; //deshabilita las interrupciones 
-    
 
     //obligatorio
     EECON2 = 0x55;
     EECON2 = 0xAA;
+    
     EECON1bits.WR = 1; //habilitar escritua
     
+    while(PIR2bits.EEIF == 0);
+    PIR2bits.EEIF = 0;
     EECON1bits.WREN = 0; //apagamos la escritura
-    
     INTCONbits.RBIF = 0; // limpiamos bandera en el puerto b
-    INTCONbits.GIE = 1; //habilita interrupciones globales 
-            
+
+    INTCONbits.GIE = 1;//extra
+    //INTCONbits.GIE = 1; //habilita interrupciones globales 
+    
 }
 
 uint8_t EEPROMREAD(uint8_t address){
+    
+    while (WR||RD);
+        
     EEADR = address ;//asgina la direccin 
     EECON1bits.EEPGD = 0;//selecciona la menoria eeprom
     EECON1bits.RD = 1;//habilita lectura de eeprom
     return EEDAT;//retorna el valor de la direccion leida
 }
 
-//Funcion para mostrar texto
-void cadena(char *cursor){
-    while (*cursor != '\0'){//mientras el cursor sea diferente a nulo
-        while (PIR1bits.TXIF == 0); //mientras que se este enviando no hacer nada
-            TXREG = *cursor; //asignar el valor del cursor para enviar
-            *cursor++;//aumentar posicion del cursor
+void contmodo(void){
+    if (modo != 3){
+        modo ++; //incremeta el modo s
+    }
+    else{
+        modo = 1;//el modo se pone en 1
     }
 }
+////Funcion para mostrar texto
+//void cadena(char *cursor){
+//    while (*cursor != '\0'){//mientras el cursor sea diferente a nulo
+//        while (PIR1bits.TXIF == 0); //mientras que se este enviando no hacer nada
+//            TXREG = *cursor; //asignar el valor del cursor para enviar
+//            *cursor++;//aumentar posicion del cursor
+//    }
+//}
