@@ -42,6 +42,9 @@ void manualPWM_ISR(void);
 void EEPROMWRITE(uint8_t address, uint8_t data); //lectura de eeprom
 uint8_t EEPROMREAD(uint8_t address); //lectura del eeprom
 void contmodo(void);
+void uartsetup(void);// prototipo del uart
+void serial(void);
+
 
 int modo; //elegige el modo 
 unsigned int SERVO1;
@@ -52,6 +55,15 @@ unsigned int SERVO4;
 unsigned int pot3; //valor para tiempo en alto de PWM para intensidad del led
 unsigned int pot4; //valor para tiempo en alto de PWM para intensidad del led
 unsigned int address;
+
+
+uint8_t uart_data; // datos recibidos del uart
+uint8_t dato1; //dato para el servo 1 recibido de uart 
+uint8_t dato2;//dato para el servo 2 recibido de uart 
+uint8_t dato3;//dato para el servo 3 recibido de uart 
+uint8_t dato4;//dato para el servo 4 recibido de uart 
+uint8_t servo_selected = 0; // Añadir esta variable
+uint8_t opcionservo = 0; //opcion del potenciometro
 
 //-----------------mapeo de valores potenciometro 3 y 4--------
 unsigned int map(uint8_t value, int inputmin, int inputmax, int outmin, int outmax);
@@ -115,8 +127,10 @@ void __interrupt() isr(void){
 void main(void){
     setup();//llamar a las configuraciones genreales
     setupADC();//LLamar a la configuracion del adc
-    setupPWM();
-    tmr0_setup();
+    setupPWM();//configuracio del pwm
+    tmr0_setup(); //configuraciones de tmr0
+    uartsetup(); //configuraciones de uart 
+
     modo = 1; //modo inical es 1
     address = 0;
     
@@ -209,7 +223,13 @@ void main(void){
                     PORTDbits.RD1 = 0; //limpia led de leer eeprom
                     PORTDbits.RD2 = 1; //encinde led 
                     PORTDbits.RD3 = 0; //apaga led       
-            
+                    
+                    
+                    //chequear si hay interrupcion debido al uart 
+                    if (PIR1bits.RCIF == 1){
+                        serial();
+                    }
+                    
                     break;
                 
             }
@@ -277,8 +297,10 @@ void setup(void){
     // --------------- INTERRUPCIONES --------------- 
 
     INTCONbits.GIE = 1; // habilitar interrupciones globales
-    //INTCONbits.PEIE = 1; // habilitar interrupciones perifericas
+    INTCONbits.PEIE = 1; // habilitar interrupciones perifericas
     INTCONbits.RBIE = 1; //habilitar interrupciones en portb
+    PIE1bits.RCIE =  0; //Encender interrupciones del RECEPTOR UART
+    PIR1bits.RCIF = 0; //limpiar banndaera de interrupcion del uart 
     
     IOCBbits.IOCB0 = 1; //habilitar interrupciones en rb0
     IOCBbits.IOCB1 = 1; // habilitar interrupciones en rb1
@@ -372,12 +394,12 @@ void tmr0_setup(void){
 ////////////////////////////////////////////////////
 
 
-//mapeo de los pwm manuales
+//----------------------------------------mapeo de los pwm manuales
 unsigned int map(uint8_t value, int inputmin, int inputmax, int outmin, int outmax){ //función para mapear valores
     return ((value - inputmin)*(outmax-outmin)) / (inputmax-inputmin)+outmin;} 
 
 
-//multiplexado para controlar los dos servos adicionales 
+//---------------------------------multiplexado para controlar los dos servos adicionales 
 void manualPWM_ISR(void) {
         TMR0 = tmr0_val;
         PORTCbits.RC3 = 1; //encender led
@@ -392,7 +414,7 @@ void manualPWM_ISR(void) {
         
 }
 
-//FUNCION DE DELAY VARIABLES
+//------------------------------------------------FUNCION DE DELAY VARIABLES
 void delay(unsigned int micro){
     while (micro > 0){
         __delay_us(250); //delay de 0.25ms
@@ -403,6 +425,8 @@ void delay(unsigned int micro){
 //----------funciones para eeprom-----------------------
 
 ////----------funciones--------------
+
+//-----------------------escritura de la eeprom---------------------------
 void EEPROMWRITE(uint8_t address, uint8_t data){
     while(WR);
     EEADR = address;//asignar direccin de datos 
@@ -429,6 +453,8 @@ void EEPROMWRITE(uint8_t address, uint8_t data){
     
 }
 
+
+//--------------------------lectura de la eeprom---------------------------
 uint8_t EEPROMREAD(uint8_t address){
     
     while (WR||RD);
@@ -439,6 +465,7 @@ uint8_t EEPROMREAD(uint8_t address){
     return EEDAT;//retorna el valor de la direccion leida
 }
 
+//--------------------------------contador para cambio de modo-----------------------------
 void contmodo(void){
     if (modo != 3){
         modo ++; //incremeta el modo s
@@ -447,11 +474,81 @@ void contmodo(void){
         modo = 1;//el modo se pone en 1
     }
 }
-////Funcion para mostrar texto
-//void cadena(char *cursor){
-//    while (*cursor != '\0'){//mientras el cursor sea diferente a nulo
-//        while (PIR1bits.TXIF == 0); //mientras que se este enviando no hacer nada
-//            TXREG = *cursor; //asignar el valor del cursor para enviar
-//            *cursor++;//aumentar posicion del cursor
-//    }
-//}
+
+//------------------------------------setup del uart -----------------------------------------
+
+void uartsetup(void){
+    TXSTAbits.SYNC = 0;//asincrono
+    TXSTAbits.BRGH = 1;//high baud rate select bit
+    
+    BAUDCTLbits.BRG16 = 1;//utilizar 16 bits baud rate
+    
+    SPBRG = 12; //configurar a 9615 era 25 y 103
+    SPBRGH = 0;//estaba en 0    
+
+    
+    RCSTAbits.SPEN = 1;//habilitar la comunicacion serial
+    RCSTAbits.RX9 = 0;//deshabiliamos bit de direccion
+    TXSTAbits.TX9 = 0; // se acaba de apagar--------------------
+    RCSTAbits.CREN = 1;//habilitar recepcion 
+    TXSTAbits.TXEN = 1;//habiliar la transmision   
+}
+
+//f-------------------------------funcion pra comucnicacion con interfaz 
+void serial(void){
+    servo_selected = RCREG; //los datos recibidos se pasa a la varibale 
+    
+    //seleccionar el servo a manejar 
+    switch(servo_selected){
+        
+        case (1):
+            opcionservo = 1;//seleciona servo 1
+            break;
+            
+        case (2):
+            opcionservo = 2;//seleciona servo 2
+            break;
+            
+        case (3):
+            opcionservo = 3;//seleciona servo 3
+            break;
+            
+        case (4):
+            opcionservo = 4;//seleciona servo 4
+            break;
+    }
+    
+    //trasladar vaor al servo
+    if (opcionservo == 1){
+        while(!PIR1bits.RCIF);
+        dato1 = RCREG; //dato recibido
+        
+        CCPR1L = dato1; //pasar el datos al servo
+        servo_selected = 0; //se reinicia la seleccion del potencometr 
+    }
+    
+    if (opcionservo == 2){
+        while(!PIR1bits.RCIF);
+        dato2 = RCREG; //dato recibido
+        
+        CCPR2L = dato2; //pasar el datos al servo
+        servo_selected = 0; //se reinicia la seleccion del potencometr 
+    }
+    
+    if (opcionservo == 3){
+        while(!PIR1bits.RCIF);
+        dato3 = RCREG; //dato recibido
+        
+        pot3 = dato3; //pasar el datos al servo
+        servo_selected = 0; //se reinicia la seleccion del potencometr 
+    }
+    
+    if (opcionservo == 4){
+        while(!PIR1bits.RCIF);
+        dato4 = RCREG; //dato recibido
+        
+        pot4 = dato4; //pasar el datos al servo
+        servo_selected = 0; //se reinicia la seleccion del potencometr 
+    }
+    
+}
