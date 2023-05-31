@@ -128,7 +128,7 @@ void __interrupt() isr(void){
     }
     
     
-//modo adafrui
+//modo adafruit
     if (modo == 4){
          if (PIR1bits.RCIF == 1){// revisar si hay interrucpcion
             serial();
@@ -210,7 +210,7 @@ void main(void){
                     __delay_us(100);
 
                 
-            //-------------------canal4----------
+            //-------------------cana4----------
                     ADCON0bits.CHS = 0b0100;
                     __delay_us(100);
                     ADCON0bits.GO = 1; //se inicia la conversion 
@@ -247,7 +247,7 @@ void main(void){
    
                     break;
                     
-                case(4): //modo uart
+                case(4): //modo adafruit
                     PORTDbits.RD5 = 1; //lenciende el led de adafruit
                     PORTDbits.RD4 = 0; //limpia led de guadar eeprom
                     PORTDbits.RD1 = 0; //limpia led de leer eeprom
@@ -267,9 +267,9 @@ void setup(void){
     // --------------- Definir como digitales --------------- 
     ANSELH = 0; //puertos digitales 
     ANSELbits.ANS0 = 1; // ra0 como analogico
-    ANSELbits.ANS2 = 1; //ra1 como analogico (era este)
-    ANSELbits.ANS3 = 1; //ra1 como analogico (era este)
-    ANSELbits.ANS4 = 1; //ra1 como analogico (era este)
+    ANSELbits.ANS2 = 1; //ra2 como analogico 
+    ANSELbits.ANS3 = 1; //ra3 como analogico 
+    ANSELbits.ANS4 = 1; //ra4 como analogico 
 
     
     // --------------- Configura puertos --------------- 
@@ -467,8 +467,10 @@ void EEPROMWRITE(uint8_t address, uint8_t data){
     
     EECON1bits.WR = 1; //habilitar escritua
     
-    while(PIR2bits.EEIF == 0);
-    PIR2bits.EEIF = 0;
+    while(PIR2bits.EEIF == 0);//  se pone a 1 cuando la escritura en la EEPROM ha terminado
+
+    PIR2bits.EEIF = 0;//si se termina laescritura, limpiamos el bit EEIF
+
     EECON1bits.WREN = 0; //apagamos la escritura
     INTCONbits.RBIF = 0; // limpiamos bandera en el puerto b
 
@@ -481,6 +483,8 @@ void EEPROMWRITE(uint8_t address, uint8_t data){
 //--------------------------lectura de la eeprom---------------------------
 uint8_t EEPROMREAD(uint8_t address){
     
+    // WR y RD son bits de estado que indican si una operación de escritura o lectura esta pasandp}o
+
     while (WR||RD);
         
     EEADR = address ;//asgina la direccin 
@@ -518,64 +522,6 @@ void uartsetup(void){
     TXSTAbits.TXEN = 1;//habiliar la transmision   
 }
 
-//f-------------------------------funcion pra comucnicacion con interfaz 
-//void serial(void){
-//    servo_selected = RCREG; //los datos recibidos se pasa a la varibale 
-//    
-//    //seleccionar el servo a manejar 
-//    switch(servo_selected){
-//        
-//        case (1):
-//            opcionservo = 1;//seleciona servo 1
-//            break;
-//            
-//        case (2):
-//            opcionservo = 2;//seleciona servo 2
-//            break;
-//            
-//        case (3):
-//            opcionservo = 3;//seleciona servo 3
-//            break;
-//            
-//        case (4):
-//            opcionservo = 4;//seleciona servo 4
-//            break;
-//    }
-//    
-//    //trasladar vaor al servo
-//    if (opcionservo == 1){
-//        while(!PIR1bits.RCIF);
-//        dato1 = RCREG; //dato recibido
-//        
-//        CCPR1L = dato1; //pasar el datos al servo
-//        servo_selected = 0; //se reinicia la seleccion del potencometr 
-//    }
-//    
-//    if (opcionservo == 2){
-//        while(!PIR1bits.RCIF);
-//        dato2 = RCREG; //dato recibido
-//        
-//        CCPR2L = dato2; //pasar el datos al servo
-//        servo_selected = 0; //se reinicia la seleccion del potencometr 
-//    }
-//    
-//    if (opcionservo == 3){
-//        while(!PIR1bits.RCIF);
-//        dato3 = RCREG; //dato recibido
-//        
-//        pot3 = dato3; //pasar el datos al servo
-//        servo_selected = 0; //se reinicia la seleccion del potencometr 
-//    }
-//    
-//    if (opcionservo == 4){
-//        while(!PIR1bits.RCIF);
-//        dato4 = RCREG; //dato recibido
-//        
-//        pot4 = dato4; //pasar el datos al servo
-//        servo_selected = 0; //se reinicia la seleccion del potencometr 
-//    }
-//    
-//}
 
 void serial(void){
     if (RCREG == '1'){//Revisar si se envia un 1
