@@ -119,6 +119,12 @@ void __interrupt() isr(void){
         INTCONbits.RBIF = 0; 
 
     }
+    
+    if (modo == 3){
+    if (PIR1bits.RCIF == 1){// revisar si hay interrucpcion
+        serial();
+    }
+    }
 
 }
 
@@ -226,9 +232,9 @@ void main(void){
                     
                     
                     //chequear si hay interrupcion debido al uart 
-                    if (PIR1bits.RCIF == 1){
-                        serial();
-                    }
+//                    if (PIR1bits.RCIF == 1){
+//                        serial();
+//                    }
                     
                     break;
                 
@@ -489,66 +495,110 @@ void uartsetup(void){
     
     RCSTAbits.SPEN = 1;//habilitar la comunicacion serial
     RCSTAbits.RX9 = 0;//deshabiliamos bit de direccion
-    TXSTAbits.TX9 = 0; // se acaba de apagar--------------------
+    //TXSTAbits.TX9 = 0; // se acaba de apagar--------------------
     RCSTAbits.CREN = 1;//habilitar recepcion 
     TXSTAbits.TXEN = 1;//habiliar la transmision   
 }
 
 //f-------------------------------funcion pra comucnicacion con interfaz 
+//void serial(void){
+//    servo_selected = RCREG; //los datos recibidos se pasa a la varibale 
+//    
+//    //seleccionar el servo a manejar 
+//    switch(servo_selected){
+//        
+//        case (1):
+//            opcionservo = 1;//seleciona servo 1
+//            break;
+//            
+//        case (2):
+//            opcionservo = 2;//seleciona servo 2
+//            break;
+//            
+//        case (3):
+//            opcionservo = 3;//seleciona servo 3
+//            break;
+//            
+//        case (4):
+//            opcionservo = 4;//seleciona servo 4
+//            break;
+//    }
+//    
+//    //trasladar vaor al servo
+//    if (opcionservo == 1){
+//        while(!PIR1bits.RCIF);
+//        dato1 = RCREG; //dato recibido
+//        
+//        CCPR1L = dato1; //pasar el datos al servo
+//        servo_selected = 0; //se reinicia la seleccion del potencometr 
+//    }
+//    
+//    if (opcionservo == 2){
+//        while(!PIR1bits.RCIF);
+//        dato2 = RCREG; //dato recibido
+//        
+//        CCPR2L = dato2; //pasar el datos al servo
+//        servo_selected = 0; //se reinicia la seleccion del potencometr 
+//    }
+//    
+//    if (opcionservo == 3){
+//        while(!PIR1bits.RCIF);
+//        dato3 = RCREG; //dato recibido
+//        
+//        pot3 = dato3; //pasar el datos al servo
+//        servo_selected = 0; //se reinicia la seleccion del potencometr 
+//    }
+//    
+//    if (opcionservo == 4){
+//        while(!PIR1bits.RCIF);
+//        dato4 = RCREG; //dato recibido
+//        
+//        pot4 = dato4; //pasar el datos al servo
+//        servo_selected = 0; //se reinicia la seleccion del potencometr 
+//    }
+//    
+//}
+
 void serial(void){
-    servo_selected = RCREG; //los datos recibidos se pasa a la varibale 
-    
-    //seleccionar el servo a manejar 
-    switch(servo_selected){
-        
-        case (1):
-            opcionservo = 1;//seleciona servo 1
-            break;
-            
-        case (2):
-            opcionservo = 2;//seleciona servo 2
-            break;
-            
-        case (3):
-            opcionservo = 3;//seleciona servo 3
-            break;
-            
-        case (4):
-            opcionservo = 4;//seleciona servo 4
-            break;
+    if (RCREG == '1'){//Revisar si se envia un 1
+        CCPR1L = 19; //valor maximo de brazo 1
+        PIR1bits.RCIF = 0; //limpiar bandera
     }
     
-    //trasladar vaor al servo
-    if (opcionservo == 1){
-        while(!PIR1bits.RCIF);
-        dato1 = RCREG; //dato recibido
-        
-        CCPR1L = dato1; //pasar el datos al servo
-        servo_selected = 0; //se reinicia la seleccion del potencometr 
+    if (RCREG == '2'){//Revisar si se envia un 1
+        CCPR1L = 4; //valor maximo de brazo 1
+        PIR1bits.RCIF = 0; //limpiar bandera
     }
     
-    if (opcionservo == 2){
-        while(!PIR1bits.RCIF);
-        dato2 = RCREG; //dato recibido
-        
-        CCPR2L = dato2; //pasar el datos al servo
-        servo_selected = 0; //se reinicia la seleccion del potencometr 
+    if (RCREG == '3'){//Revisar si se envia un 3
+        CCPR2L = 19; //valor maximo de brazo 2
+        PIR1bits.RCIF = 0; //limpiar bandera
     }
     
-    if (opcionservo == 3){
-        while(!PIR1bits.RCIF);
-        dato3 = RCREG; //dato recibido
-        
-        pot3 = dato3; //pasar el datos al servo
-        servo_selected = 0; //se reinicia la seleccion del potencometr 
+    if (RCREG == '4'){//Revisar si se envia un 3
+        CCPR2L = 4; //valor minimo de brazo 2
+        PIR1bits.RCIF = 0; //limpiar bandera
     }
     
-    if (opcionservo == 4){
-        while(!PIR1bits.RCIF);
-        dato4 = RCREG; //dato recibido
-        
-        pot4 = dato4; //pasar el datos al servo
-        servo_selected = 0; //se reinicia la seleccion del potencometr 
+    if (RCREG == '5'){//Revisar si se envia un 3
+        pot3 = 9; //valor minimo de garra 2
+        PIR1bits.RCIF = 0; //limpiar bandera
     }
     
+    if (RCREG == '6'){//Revisar si se envia un 3
+        pot3 = 2; //valor minimo de brazo 2
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
+    
+    if (RCREG == '7'){//Revisar si se envia un 3
+        pot4 = 9; //valor minimo de brazo 2
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
+    
+    if (RCREG == '8'){//Revisar si se envia un 3
+        pot4 = 2; //valor minimo de brazo 2
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
 }
+    
+
