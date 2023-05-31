@@ -42,6 +42,9 @@ void manualPWM_ISR(void);
 void EEPROMWRITE(uint8_t address, uint8_t data); //lectura de eeprom
 uint8_t EEPROMREAD(uint8_t address); //lectura del eeprom
 void contmodo(void);
+void uartsetup(void);// prototipo del uart
+void serial(void);
+
 
 int modo; //elegige el modo 
 unsigned int SERVO1;
@@ -52,6 +55,15 @@ unsigned int SERVO4;
 unsigned int pot3; //valor para tiempo en alto de PWM para intensidad del led
 unsigned int pot4; //valor para tiempo en alto de PWM para intensidad del led
 unsigned int address;
+
+
+uint8_t uart_data; // datos recibidos del uart
+uint8_t dato1; //dato para el servo 1 recibido de uart 
+uint8_t dato2;//dato para el servo 2 recibido de uart 
+uint8_t dato3;//dato para el servo 3 recibido de uart 
+uint8_t dato4;//dato para el servo 4 recibido de uart 
+uint8_t servo_selected = 0; // Añadir esta variable
+uint8_t opcionservo = 0; //opcion del potenciometro
 
 //-----------------mapeo de valores potenciometro 3 y 4--------
 unsigned int map(uint8_t value, int inputmin, int inputmax, int outmin, int outmax);
@@ -107,6 +119,22 @@ void __interrupt() isr(void){
         INTCONbits.RBIF = 0; 
 
     }
+   
+    //para modo interfaz uart
+    if (modo == 3){
+    if (PIR1bits.RCIF == 1){// revisar si hay interrucpcion
+        serial();
+    }
+    }
+    
+    
+//modo adafruit
+    if (modo == 4){
+         if (PIR1bits.RCIF == 1){// revisar si hay interrucpcion
+            serial();
+            }
+       }
+    
 
 }
 
@@ -115,8 +143,10 @@ void __interrupt() isr(void){
 void main(void){
     setup();//llamar a las configuraciones genreales
     setupADC();//LLamar a la configuracion del adc
-    setupPWM();
-    tmr0_setup();
+    setupPWM();//configuracio del pwm
+    tmr0_setup(); //configuraciones de tmr0
+    uartsetup(); //configuraciones de uart 
+
     modo = 1; //modo inical es 1
     address = 0;
     
@@ -141,7 +171,8 @@ void main(void){
                     PORTDbits.RD1 = 0;//limpia led de guardado
                     PORTDbits.RD2 = 1; //enciende led 
                     PORTDbits.RD3 = 1; //enciende led 
-            
+                    PORTDbits.RD5 = 0; //limpia led de adafruit
+                    
                 
                 //-----------------canal---------------------
                     ADCON0bits.CHS = 0b0000;  // Chequea el canal 0
@@ -179,7 +210,7 @@ void main(void){
                     __delay_us(100);
 
                 
-            //-------------------canal4----------
+            //-------------------cana4----------
                     ADCON0bits.CHS = 0b0100;
                     __delay_us(100);
                     ADCON0bits.GO = 1; //se inicia la conversion 
@@ -196,6 +227,8 @@ void main(void){
                     PORTDbits.RD1 = 0; //limpia el bits de guardado
                     PORTDbits.RD2 = 0 ; //apaga led
                     PORTDbits.RD3 = 1; //enciende led 
+                    PORTDbits.RD5 = 0; //limpia led de adafruit
+
                     
                     //actualizar los valores de los pwm de los dos pot
                     CCPR1L = SERVO1;
@@ -208,8 +241,19 @@ void main(void){
                     PORTDbits.RD4 = 0; //limpia led de guadar eeprom
                     PORTDbits.RD1 = 0; //limpia led de leer eeprom
                     PORTDbits.RD2 = 1; //encinde led 
+                    PORTDbits.RD3 = 0; //apaga led
+                    PORTDbits.RD5 = 0; //limpia led de adafruit
+
+   
+                    break;
+                    
+                case(4): //modo adafruit
+                    PORTDbits.RD5 = 1; //lenciende el led de adafruit
+                    PORTDbits.RD4 = 0; //limpia led de guadar eeprom
+                    PORTDbits.RD1 = 0; //limpia led de leer eeprom
+                    PORTDbits.RD2 = 0; //encinde led 
                     PORTDbits.RD3 = 0; //apaga led       
-            
+   
                     break;
                 
             }
@@ -223,9 +267,9 @@ void setup(void){
     // --------------- Definir como digitales --------------- 
     ANSELH = 0; //puertos digitales 
     ANSELbits.ANS0 = 1; // ra0 como analogico
-    ANSELbits.ANS2 = 1; //ra1 como analogico (era este)
-    ANSELbits.ANS3 = 1; //ra1 como analogico (era este)
-    ANSELbits.ANS4 = 1; //ra1 como analogico (era este)
+    ANSELbits.ANS2 = 1; //ra2 como analogico 
+    ANSELbits.ANS3 = 1; //ra3 como analogico 
+    ANSELbits.ANS4 = 1; //ra4 como analogico 
 
     
     // --------------- Configura puertos --------------- 
@@ -277,8 +321,10 @@ void setup(void){
     // --------------- INTERRUPCIONES --------------- 
 
     INTCONbits.GIE = 1; // habilitar interrupciones globales
-    //INTCONbits.PEIE = 1; // habilitar interrupciones perifericas
+    INTCONbits.PEIE = 1; // habilitar interrupciones perifericas
     INTCONbits.RBIE = 1; //habilitar interrupciones en portb
+    PIE1bits.RCIE =  0; //Encender interrupciones del RECEPTOR UART
+    PIR1bits.RCIF = 0; //limpiar banndaera de interrupcion del uart 
     
     IOCBbits.IOCB0 = 1; //habilitar interrupciones en rb0
     IOCBbits.IOCB1 = 1; // habilitar interrupciones en rb1
@@ -372,12 +418,12 @@ void tmr0_setup(void){
 ////////////////////////////////////////////////////
 
 
-//mapeo de los pwm manuales
+//----------------------------------------mapeo de los pwm manuales
 unsigned int map(uint8_t value, int inputmin, int inputmax, int outmin, int outmax){ //función para mapear valores
     return ((value - inputmin)*(outmax-outmin)) / (inputmax-inputmin)+outmin;} 
 
 
-//multiplexado para controlar los dos servos adicionales 
+//---------------------------------multiplexado para controlar los dos servos adicionales 
 void manualPWM_ISR(void) {
         TMR0 = tmr0_val;
         PORTCbits.RC3 = 1; //encender led
@@ -392,7 +438,7 @@ void manualPWM_ISR(void) {
         
 }
 
-//FUNCION DE DELAY VARIABLES
+//------------------------------------------------FUNCION DE DELAY VARIABLES
 void delay(unsigned int micro){
     while (micro > 0){
         __delay_us(250); //delay de 0.25ms
@@ -403,6 +449,8 @@ void delay(unsigned int micro){
 //----------funciones para eeprom-----------------------
 
 ////----------funciones--------------
+
+//-----------------------escritura de la eeprom---------------------------
 void EEPROMWRITE(uint8_t address, uint8_t data){
     while(WR);
     EEADR = address;//asignar direccin de datos 
@@ -419,8 +467,10 @@ void EEPROMWRITE(uint8_t address, uint8_t data){
     
     EECON1bits.WR = 1; //habilitar escritua
     
-    while(PIR2bits.EEIF == 0);
-    PIR2bits.EEIF = 0;
+    while(PIR2bits.EEIF == 0);//  se pone a 1 cuando la escritura en la EEPROM ha terminado
+
+    PIR2bits.EEIF = 0;//si se termina laescritura, limpiamos el bit EEIF
+
     EECON1bits.WREN = 0; //apagamos la escritura
     INTCONbits.RBIF = 0; // limpiamos bandera en el puerto b
 
@@ -429,8 +479,12 @@ void EEPROMWRITE(uint8_t address, uint8_t data){
     
 }
 
+
+//--------------------------lectura de la eeprom---------------------------
 uint8_t EEPROMREAD(uint8_t address){
     
+    // WR y RD son bits de estado que indican si una operación de escritura o lectura esta pasandp}o
+
     while (WR||RD);
         
     EEADR = address ;//asgina la direccin 
@@ -439,19 +493,76 @@ uint8_t EEPROMREAD(uint8_t address){
     return EEDAT;//retorna el valor de la direccion leida
 }
 
+//--------------------------------contador para cambio de modo-----------------------------
 void contmodo(void){
-    if (modo != 3){
+    if (modo != 4){
         modo ++; //incremeta el modo s
     }
     else{
         modo = 1;//el modo se pone en 1
     }
 }
-////Funcion para mostrar texto
-//void cadena(char *cursor){
-//    while (*cursor != '\0'){//mientras el cursor sea diferente a nulo
-//        while (PIR1bits.TXIF == 0); //mientras que se este enviando no hacer nada
-//            TXREG = *cursor; //asignar el valor del cursor para enviar
-//            *cursor++;//aumentar posicion del cursor
-//    }
-//}
+
+//------------------------------------setup del uart -----------------------------------------
+
+void uartsetup(void){
+    TXSTAbits.SYNC = 0;//asincrono
+    TXSTAbits.BRGH = 1;//high baud rate select bit
+    
+    BAUDCTLbits.BRG16 = 1;//utilizar 16 bits baud rate
+    
+    SPBRG = 12; //configurar a 9615 era 25 y 103
+    SPBRGH = 0;//estaba en 0    
+
+    
+    RCSTAbits.SPEN = 1;//habilitar la comunicacion serial
+    RCSTAbits.RX9 = 0;//deshabiliamos bit de direccion
+    //TXSTAbits.TX9 = 0; // se acaba de apagar--------------------
+    RCSTAbits.CREN = 1;//habilitar recepcion 
+    TXSTAbits.TXEN = 1;//habiliar la transmision   
+}
+
+
+void serial(void){
+    if (RCREG == '1'){//Revisar si se envia un 1
+        CCPR1L = 19; //valor maximo de brazo 1
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
+    
+    if (RCREG == '2'){//Revisar si se envia un 1
+        CCPR1L = 4; //valor maximo de brazo 1
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
+    
+    if (RCREG == '3'){//Revisar si se envia un 3
+        CCPR2L = 19; //valor maximo de brazo 2
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
+    
+    if (RCREG == '4'){//Revisar si se envia un 3
+        CCPR2L = 4; //valor minimo de brazo 2
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
+    
+    if (RCREG == '5'){//Revisar si se envia un 3
+        pot3 = 9; //valor minimo de garra 2
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
+    
+    if (RCREG == '6'){//Revisar si se envia un 3
+        pot3 = 2; //valor minimo de brazo 2
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
+    
+    if (RCREG == '7'){//Revisar si se envia un 3
+        pot4 = 9; //valor minimo de brazo 2
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
+    
+    if (RCREG == '8'){//Revisar si se envia un 3
+        pot4 = 2; //valor minimo de brazo 2
+        PIR1bits.RCIF = 0; //limpiar bandera
+    }
+}
+    
+
