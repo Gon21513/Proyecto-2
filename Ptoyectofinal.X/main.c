@@ -119,12 +119,22 @@ void __interrupt() isr(void){
         INTCONbits.RBIF = 0; 
 
     }
-    
+   
+    //para modo interfaz uart
     if (modo == 3){
     if (PIR1bits.RCIF == 1){// revisar si hay interrucpcion
         serial();
     }
     }
+    
+    
+//modo adafrui
+    if (modo == 4){
+         if (PIR1bits.RCIF == 1){// revisar si hay interrucpcion
+            serial();
+            }
+       }
+    
 
 }
 
@@ -161,7 +171,8 @@ void main(void){
                     PORTDbits.RD1 = 0;//limpia led de guardado
                     PORTDbits.RD2 = 1; //enciende led 
                     PORTDbits.RD3 = 1; //enciende led 
-            
+                    PORTDbits.RD5 = 0; //limpia led de adafruit
+                    
                 
                 //-----------------canal---------------------
                     ADCON0bits.CHS = 0b0000;  // Chequea el canal 0
@@ -216,6 +227,8 @@ void main(void){
                     PORTDbits.RD1 = 0; //limpia el bits de guardado
                     PORTDbits.RD2 = 0 ; //apaga led
                     PORTDbits.RD3 = 1; //enciende led 
+                    PORTDbits.RD5 = 0; //limpia led de adafruit
+
                     
                     //actualizar los valores de los pwm de los dos pot
                     CCPR1L = SERVO1;
@@ -228,14 +241,19 @@ void main(void){
                     PORTDbits.RD4 = 0; //limpia led de guadar eeprom
                     PORTDbits.RD1 = 0; //limpia led de leer eeprom
                     PORTDbits.RD2 = 1; //encinde led 
+                    PORTDbits.RD3 = 0; //apaga led
+                    PORTDbits.RD5 = 0; //limpia led de adafruit
+
+   
+                    break;
+                    
+                case(4): //modo uart
+                    PORTDbits.RD5 = 1; //lenciende el led de adafruit
+                    PORTDbits.RD4 = 0; //limpia led de guadar eeprom
+                    PORTDbits.RD1 = 0; //limpia led de leer eeprom
+                    PORTDbits.RD2 = 0; //encinde led 
                     PORTDbits.RD3 = 0; //apaga led       
-                    
-                    
-                    //chequear si hay interrupcion debido al uart 
-//                    if (PIR1bits.RCIF == 1){
-//                        serial();
-//                    }
-                    
+   
                     break;
                 
             }
@@ -473,7 +491,7 @@ uint8_t EEPROMREAD(uint8_t address){
 
 //--------------------------------contador para cambio de modo-----------------------------
 void contmodo(void){
-    if (modo != 3){
+    if (modo != 4){
         modo ++; //incremeta el modo s
     }
     else{
